@@ -18,99 +18,171 @@ import simulationRoutes from "./routes/simulation.routes.js";
 
 import dbConnect from "./db/dbConnect.js";
 
-import {
-    initializeSocket
-} from "./services/socket.service.js";
+import { initializeSocket } from "./services/socket.service.js";
 
 const app = express();
 
+/* ============================================================
+   CORS
+   ============================================================
+
+   Render environment variable:
+   FRONTEND_URL=
+   https://sih-frontend-l1ydiqbac-shivam-guptas-projects-cd5190e3.vercel.app
+
+   Local development still works through localhost.
+   ============================================================ */
+
+const allowedOrigins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(
     cors({
-        origin:
-            process.env.FRONTEND_URL ||
-            "http://localhost:5173",
-            "https://sih-frontend-l1ydiqbac-shivam-guptas-projects-cd5190e3.vercel.app",
-        credentials: true
+        origin: function (origin, callback) {
+            // Allow requests with no Origin header
+            // such as server-to-server requests.
+            if (!origin) {
+                return callback(null, true);
+            }
+
+            if (allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+
+            console.error("CORS blocked origin:", origin);
+
+            return callback(
+                new Error(`CORS origin not allowed: ${origin}`)
+            );
+        },
+        credentials: true,
     })
 );
 
-app.use(
-    express.json()
-);
+/* ============================================================
+   BODY PARSERS
+   ============================================================ */
 
-app.use(
-    cookieParser()
-);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.use(
-    passport.initialize()
-);
+/* ============================================================
+   COOKIES
+   ============================================================ */
 
-app.use(
-    "/api/v1/users",
-    userRoutes
-);
+app.use(cookieParser());
 
-app.use(
-    "/api/v1/stations",
-    stationRoutes
-);
+/* ============================================================
+   PASSPORT
+   ============================================================ */
 
-app.use(
-    "/api/v1/requirements",
-    requirementRoutes
-);
+app.use(passport.initialize());
 
-app.use(
-    "/api/v1/logistics",
-    logisticsRoutes
-);
+/* ============================================================
+   API ROUTES
+   ============================================================ */
 
-app.use(
-    "/api/v1/environment",
-    environmentRoutes
-);
+app.use("/api/v1/users", userRoutes);
 
-app.use(
-    "/api/v1/energy",
-    energyRoutes
-);
+app.use("/api/v1/stations", stationRoutes);
 
-app.use(
-    "/api/v1/infrastructure",
-    infrastructureRoutes
-);
+app.use("/api/v1/requirements", requirementRoutes);
 
-app.use(
-    "/api/v1/master-alerts",
-    masterAlertRoutes
-);
+app.use("/api/v1/logistics", logisticsRoutes);
 
-app.use(
-    "/api/v1/simulation",
-    simulationRoutes
-);
+app.use("/api/v1/environment", environmentRoutes);
 
-const server =
-    http.createServer(app);
+app.use("/api/v1/energy", energyRoutes);
+
+app.use("/api/v1/infrastructure", infrastructureRoutes);
+
+app.use("/api/v1/master-alerts", masterAlertRoutes);
+
+app.use("/api/v1/simulation", simulationRoutes);
+
+/* ============================================================
+   BASIC HEALTH CHECK
+   ============================================================ */
+
+app.get("/", (req, res) => {
+    res.status(200).json({
+        message: "SIH Backend API is running",
+        status: "OK",
+    });
+});
+
+app.get("/health", (req, res) => {
+    res.status(200).json({
+        status: "healthy",
+        message: "Backend is running successfully",
+    });
+});
+
+/* ============================================================
+   404 HANDLER
+   ============================================================ */
+
+app.use((req, res) => {
+    res.status(404).json({
+        message: `Route not found: ${req.method} ${req.originalUrl}`,
+    });
+});
+
+/* ============================================================
+   GLOBAL ERROR HANDLER
+   ============================================================ */
+
+app.use((error, req, res, next) => {
+    console.error("Global error:", error);
+
+    const statusCode = error.statusCode || 500;
+
+    res.status(statusCode).json({
+        message:
+            error.message ||
+            "Internal server error",
+    });
+});
+
+/* ============================================================
+   HTTP SERVER
+   ============================================================ */
+
+const server = http.createServer(app);
+
+/* ============================================================
+   SOCKET.IO
+   ============================================================ */
 
 initializeSocket(server);
 
-const PORT =
-    process.env.PORT || 5000;
+/* ============================================================
+   PORT
+   ============================================================ */
+
+const PORT = process.env.PORT || 5000;
+
+/* ============================================================
+   START SERVER
+   ============================================================ */
 
 const startServer = async () => {
     try {
         await dbConnect();
 
-        server.listen(
-            PORT,
-            () => {
-                console.log(
-                    `Server running on port ${PORT}`
-                );
-            }
-        );
+        server.listen(PORT, "0.0.0.0", () => {
+            console.log(
+                `Server running on port ${PORT}`
+            );
+
+            console.log(
+                "Allowed CORS origins:",
+                allowedOrigins
+            );
+        });
     } catch (error) {
         console.error(
             "MongoDB connection failed:",
