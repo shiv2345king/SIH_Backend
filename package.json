@@ -17,6 +17,6 @@
   },
   "scripts": {
     "dev": "node --env-file=.env src/app.js",
-    "seed:stations": "node --env-file=.env src/seed/station.seed.js"
+    "start": "node src/index.js"
   }
 }
