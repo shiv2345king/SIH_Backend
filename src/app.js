@@ -29,6 +29,7 @@ app.use(
         origin:
             process.env.FRONTEND_URL ||
             "http://localhost:5173",
+            "https://sih-frontend-l1ydiqbac-shivam-guptas-projects-cd5190e3.vercel.app",
         credentials: true
     })
 );
