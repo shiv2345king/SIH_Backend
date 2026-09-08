@@ -2,10 +2,10 @@ import User from "../models/userModel.js";
 import jwt from "jsonwebtoken";
 import {
     sendOtp,
-    verifyOtp
+    verifyOtp,
 } from "../services/otp.service.js";
 import {
-    startSimulation
+    startSimulation,
 } from "../services/simulation.service.js";
 
 /* ============================================================
@@ -53,36 +53,59 @@ const generateRefreshAccessToken = async (
     user.refreshToken = refreshToken;
 
     await user.save({
-        validateBeforeSave: false
+        validateBeforeSave: false,
     });
 
     return {
         accessToken,
-        refreshToken
+        refreshToken,
     };
 };
+
+/* ============================================================
+   COOKIE OPTIONS
+
+   Development:
+   sameSite = "lax"
+
+   Production:
+   sameSite = "none"
+   secure = true
+
+   This is required because frontend and backend are hosted
+   on different origins (Vercel + Render).
+   ============================================================ */
 
 const cookieOptions = {
     httpOnly: true,
     secure:
         process.env.NODE_ENV === "production",
-    sameSite: "lax"
+    sameSite:
+        process.env.NODE_ENV === "production"
+            ? "none"
+            : "lax",
 };
 
 const otpCookieOptions = {
     httpOnly: true,
     secure:
         process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 10 * 60 * 1000
+    sameSite:
+        process.env.NODE_ENV === "production"
+            ? "none"
+            : "lax",
+    maxAge: 10 * 60 * 1000,
 };
 
 const passwordResetCookieOptions = {
     httpOnly: true,
     secure:
         process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 10 * 60 * 1000
+    sameSite:
+        process.env.NODE_ENV === "production"
+            ? "none"
+            : "lax",
+    maxAge: 10 * 60 * 1000,
 };
 
 /* ============================================================
@@ -102,13 +125,13 @@ const generateOtpSessionToken = (
     return jwt.sign(
         {
             _id: userId,
-            purpose
+            purpose,
         },
         process.env.OTP_TOKEN_SECRET,
         {
             expiresIn:
                 process.env.OTP_TOKEN_EXPIRY ||
-                "10m"
+                "10m",
         }
     );
 };
@@ -253,7 +276,7 @@ const refreshAccessToken = async (
 
         const {
             accessToken,
-            refreshToken
+            refreshToken,
         } =
             await generateRefreshAccessToken(
                 user._id
@@ -267,7 +290,7 @@ const refreshAccessToken = async (
             .status(200)
             .json({
                 message:
-                    "Access token refreshed successfully"
+                    "Access token refreshed successfully",
             });
     } catch (error) {
         if (error.statusCode) {
@@ -294,7 +317,7 @@ const registerUser = async (
         station,
         email,
         name,
-        password
+        password,
     } = req.body || {};
 
     if (
@@ -312,12 +335,10 @@ const registerUser = async (
     const validRoles = [
         "NCPOR Operator",
         "Station Manager",
-        "Logistics Manager"
+        "Logistics Manager",
     ];
 
-    if (
-        !validRoles.includes(role)
-    ) {
+    if (!validRoles.includes(role)) {
         throw createError(
             400,
             "Invalid role"
@@ -353,7 +374,7 @@ const registerUser = async (
         normalizedStation &&
         ![
             "MAITRI",
-            "BHARATI"
+            "BHARATI",
         ].includes(
             normalizedStation
         )
@@ -373,13 +394,12 @@ const registerUser = async (
         await User.findOne({
             $or: [
                 {
-                    name: name.trim()
+                    name: name.trim(),
                 },
                 {
-                    email:
-                        normalizedEmail
-                }
-            ]
+                    email: normalizedEmail,
+                },
+            ],
         });
 
     if (existedUser) {
@@ -400,7 +420,8 @@ const registerUser = async (
                 "NCPOR Operator"
                     ? undefined
                     : normalizedStation,
-            authProvider: "LOCAL"
+            authProvider:
+                "LOCAL",
         });
 
     const otpSessionToken =
@@ -408,9 +429,7 @@ const registerUser = async (
             user._id
         );
 
-    await sendOtp(
-        user._id
-    );
+    await sendOtp(user._id);
 
     return res
         .cookie(
@@ -423,7 +442,7 @@ const registerUser = async (
             message:
                 "User registered successfully. OTP sent for verification.",
             requiresOtp: true,
-            userId: user._id
+            userId: user._id,
         });
 };
 
@@ -439,7 +458,7 @@ const loginUser = async (
         name,
         email,
         username,
-        password
+        password,
     } = req.body || {};
 
     const loginName =
@@ -459,23 +478,21 @@ const loginUser = async (
 
     if (loginName) {
         conditions.push({
-            name:
-                loginName.trim()
+            name: loginName.trim(),
         });
     }
 
     if (email) {
         conditions.push({
-            email:
-                email
-                    .trim()
-                    .toLowerCase()
+            email: email
+                .trim()
+                .toLowerCase(),
         });
     }
 
     const user =
         await User.findOne({
-            $or: conditions
+            $or: conditions,
         }).select(
             "+password"
         );
@@ -522,9 +539,7 @@ const loginUser = async (
             user._id
         );
 
-    await sendOtp(
-        user._id
-    );
+    await sendOtp(user._id);
 
     return res
         .cookie(
@@ -536,7 +551,7 @@ const loginUser = async (
         .json({
             message:
                 "Credentials verified. OTP sent successfully.",
-            requiresOtp: true
+            requiresOtp: true,
         });
 };
 
@@ -581,7 +596,7 @@ const verifyLoginOtp = async (
 
     const {
         accessToken,
-        refreshToken
+        refreshToken,
     } =
         await generateRefreshAccessToken(
             decoded._id
@@ -603,22 +618,13 @@ const verifyLoginOtp = async (
 
     /* ========================================================
        AUTO START SIMULATION FOR STATION MANAGER
-       ========================================================
 
-       Once the Station Manager has successfully completed
-       OTP verification, automatically start simulation for
-       the station assigned to that user.
-
-       The simulation service will create:
+       After successful OTP verification:
+       - Start station telemetry simulation
        - Environment data
        - Energy data
        - Infrastructure data
-       - Master Alert data
-
-       and then continue creating snapshots every 2 seconds.
-
-       A simulation failure should NOT prevent the user from
-       logging in successfully.
+       - Master alerts
        ======================================================== */
 
     if (
@@ -672,7 +678,7 @@ const verifyLoginOtp = async (
         .json({
             message:
                 "OTP verified. User logged in successfully.",
-            user: loggedInUser
+            user: loggedInUser,
         });
 };
 
@@ -710,7 +716,7 @@ const resendLoginOtp = async (
         .json({
             message:
                 "OTP resent successfully",
-            ...result
+            ...result,
         });
 };
 
@@ -736,13 +742,14 @@ const forgotPassword = async (
 
     const user =
         await User.findOne({
-            email
+            email,
         });
 
     if (
         user &&
         user.isActive &&
-        user.authProvider === "LOCAL"
+        user.authProvider ===
+            "LOCAL"
     ) {
         const passwordResetToken =
             generateOtpSessionToken(
@@ -764,7 +771,7 @@ const forgotPassword = async (
             .json({
                 message:
                     "If the account exists, password recovery instructions and an OTP have been sent.",
-                requiresOtp: true
+                requiresOtp: true,
             });
     }
 
@@ -773,7 +780,7 @@ const forgotPassword = async (
         .json({
             message:
                 "If the account exists, password recovery instructions and an OTP have been sent.",
-            requiresOtp: true
+            requiresOtp: true,
         });
 };
 
@@ -788,7 +795,7 @@ const resetPassword = async (
     try {
         const {
             otp,
-            newPassword
+            newPassword,
         } = req.body || {};
 
         if (!otp?.trim()) {
@@ -875,7 +882,7 @@ const resetPassword = async (
 
         await user.save({
             validateModifiedOnly:
-                true
+                true,
         });
 
         return res
@@ -886,7 +893,7 @@ const resetPassword = async (
             .status(200)
             .json({
                 message:
-                    "Password reset successfully. Please login again."
+                    "Password reset successfully. Please login again.",
             });
     } catch (error) {
         console.error(
@@ -902,7 +909,7 @@ const resetPassword = async (
             .json({
                 message:
                     error?.message ||
-                    "Failed to reset password"
+                    "Failed to reset password",
             });
     }
 };
@@ -917,7 +924,7 @@ const updatePassword = async (
 ) => {
     const {
         currentPassword,
-        newPassword
+        newPassword,
     } = req.body || {};
 
     if (!currentPassword) {
@@ -1016,7 +1023,7 @@ const updatePassword = async (
         .status(200)
         .json({
             message:
-                "Password updated successfully. Please login again."
+                "Password updated successfully. Please login again.",
         });
 };
 
@@ -1024,57 +1031,60 @@ const updatePassword = async (
    GOOGLE OAUTH
    ============================================================ */
 
-const googleOAuthCallback = async (
-    req,
-    res
-) => {
-    try {
-        const user =
-            req.user;
+const googleOAuthCallback =
+    async (
+        req,
+        res
+    ) => {
+        try {
+            const user =
+                req.user;
 
-        if (!user) {
-            throw createError(
-                401,
-                "Google authentication failed"
-            );
-        }
+            if (!user) {
+                throw createError(
+                    401,
+                    "Google authentication failed"
+                );
+            }
 
-        if (!user.isActive) {
-            throw createError(
-                403,
-                "User account is inactive"
-            );
-        }
+            if (!user.isActive) {
+                throw createError(
+                    403,
+                    "User account is inactive"
+                );
+            }
 
-        const otpSessionToken =
-            generateOtpVerificationToken(
+            const otpSessionToken =
+                generateOtpVerificationToken(
+                    user._id
+                );
+
+            await sendOtp(
                 user._id
             );
 
-        await sendOtp(
-            user._id
-        );
-
-        return res
-            .cookie(
-                "otpVerificationToken",
-                otpSessionToken,
-                otpCookieOptions
-            )
-            .redirect(
-                `${process.env.FRONTEND_URL}/verify-otp`
-            );
-    } catch (error) {
-        console.error(
-            "Google OAuth Error:",
+            return res
+                .cookie(
+                    "otpVerificationToken",
+                    otpSessionToken,
+                    otpCookieOptions
+                )
+                .redirect(
+                    `${process.env.FRONTEND_URL}/verify-otp`
+                );
+        } catch (
             error
-        );
+        ) {
+            console.error(
+                "Google OAuth Error:",
+                error
+            );
 
-        return res.redirect(
-            `${process.env.FRONTEND_URL}/login?error=google_auth_failed`
-        );
-    }
-};
+            return res.redirect(
+                `${process.env.FRONTEND_URL}/login?error=google_auth_failed`
+            );
+        }
+    };
 
 /* ============================================================
    LOGOUT
@@ -1088,8 +1098,8 @@ const logoutUser = async (
         req.user._id,
         {
             $unset: {
-                refreshToken: 1
-            }
+                refreshToken: 1,
+            },
         }
     );
 
@@ -1113,7 +1123,7 @@ const logoutUser = async (
         .status(200)
         .json({
             message:
-                "User logged out successfully"
+                "User logged out successfully",
         });
 };
 
@@ -1126,7 +1136,7 @@ const getUserById = async (
     res
 ) => {
     const {
-        id
+        id,
     } = req.params;
 
     const user =
@@ -1148,7 +1158,7 @@ const getUserById = async (
         .json({
             message:
                 "User fetched successfully",
-            user
+            user,
         });
 };
 
@@ -1179,7 +1189,7 @@ const getCurrentUser = async (
         .json({
             message:
                 "Current user fetched successfully",
-            user
+            user,
         });
 };
 
@@ -1199,5 +1209,5 @@ export {
     resendLoginOtp,
     forgotPassword,
     resetPassword,
-    updatePassword
+    updatePassword,
 };
